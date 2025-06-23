@@ -63,7 +63,6 @@ class RegData(torch.utils.data.Dataset):
     Load dataset with infrared folder path and visible folder path
     """
 
-    # TODO: remove ground truth reference
     def __init__(self, opts, crop=lambda x: x):
         super(RegData, self).__init__()
         self.vis_folder = os.path.join(opts.dataroot, 'vi')
@@ -125,7 +124,6 @@ class MSRSData(torch.utils.data.Dataset):
     Load dataset with infrared folder path and visible folder path
     """
 
-    # TODO: remove ground truth reference
     def __init__(self, opts, crop=lambda x: x):
         super(MSRSData, self).__init__()
         self.vis_folder = os.path.join(opts.dataroot, 'vi')
@@ -180,7 +178,7 @@ class RoadSceneData(torch.utils.data.Dataset):
     Load dataset with infrared folder path and visible folder path
     """
 
-    # TODO: remove ground truth reference
+
     def __init__(self, opts, crop=lambda x: x):
         super(RoadSceneData, self).__init__()
         self.vis_folder = os.path.join(opts.dataroot, 'vi')
@@ -230,7 +228,6 @@ class TestData(torch.utils.data.Dataset):
     Load dataset with infrared folder path and visible folder path
     """
 
-    # TODO: remove ground truth reference
     def __init__(self, ir_dir=None, vi_dir=None):
         super(TestData, self).__init__()
         self.vis_folder = vi_dir
