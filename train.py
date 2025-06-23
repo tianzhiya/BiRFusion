@@ -11,8 +11,8 @@ from Module.TII import *
 
 from torch.utils.data import DataLoader
 
+
 def trainReg(opts):
-    # daita loader
     print('\n--- load dataset ---')
     dataset = RegData(opts)
     train_loader = torch.utils.data.DataLoader(
@@ -31,13 +31,11 @@ def trainReg(opts):
 
     saver = Saver(opts)
 
-    # train
     print('\n--- train ---')
     ep0 = 0
     for ep in range(ep0, opts.n_ep):
 
         for it, (image_ir, image_vi, image_ir_warp, image_vi_warp, deformation) in enumerate(train_loader):
-            # input data
             image_ir = image_ir.cuda(opts.gpu).detach()
             image_vi = image_vi.cuda(opts.gpu).detach()
             image_ir_warp = image_ir_warp.cuda(opts.gpu).detach()
@@ -49,7 +47,6 @@ def trainReg(opts):
                 image_ir_warp = image_ir_warp.squeeze(1)
                 image_vi_warp = image_vi_warp.squeeze(1)
                 deformation = deformation.squeeze(1)
-
 
             model.trainReg(image_ir, image_vi, image_ir_warp,
                            image_vi_warp, deformation)
@@ -65,7 +62,7 @@ def trainReg(opts):
             total_it += 1
 
         print(ep)
-        # decay learning rate
+
         if opts.n_ep_decay > -1:
             model.update_lr()
         saver.write_model(ep, opts.n_ep, model)
