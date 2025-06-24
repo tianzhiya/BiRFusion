@@ -26,7 +26,7 @@ The results of the fusion of deformed IR and visible images on the MSRS test set
 
 The results of the fusion of deformed IR and visible images on the M3FD test set can be downloaded at the following link: https://drive.google.com/file/d/1dXYX-Vcd_Tt4qFU86aFsefmWJKEYnwQ4/view?usp=sharing.
 
-## Ref
+## References
 [1]L. Tang, Y. Deng, Y. Ma, J. Huang, J. Ma, SuperFusion: A Versatile Image Registration and Fusion Network with Semantic Awareness, IEEE/CAA Journal of Automatica Sinica 9 (2022) 2121–2137. https://doi.org/10.1109/JAS.2022.106082.
 
 [2]D. Wang, J. Liu, X. Fan, R. Liu, Unsupervised Misaligned Infrared and Visible Image Fusion via Cross-Modality Image Generation and Registration, (2022). https://doi.org/10.48550/arXiv.2205.11876.
