@@ -16,8 +16,6 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 
-
-
 class Discriminator(nn.Module):
     def __init__(self, in_channels=6, base_channels=64):
         super(Discriminator, self).__init__()
@@ -116,6 +114,39 @@ class ConvLayer_dis(torch.nn.Module):
         if self.use_relu is True:
             out = self.LeakyReLU(out)
         return out
+
+
+import torch.nn.functional as F
+from torchvision.models import vgg16
+from torchvision.transforms.functional import normalize
+
+
+class VGGPerceptualLoss(torch.nn.Module):
+    def __init__(self, layer_idx=8):  # layer_idx=8 对应 relu2_2
+        super().__init__()
+        vgg = vgg16(pretrained=True).features[:layer_idx].eval()
+        for param in vgg.parameters():
+            param.requires_grad = False
+        self.vgg = vgg
+
+    def forward(self, img1, img2):
+        # 图像归一化到 VGG 需要的分布
+        def preprocess(x):
+            return normalize(x, mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
+
+        return F.l1_loss(self.vgg(preprocess(img1)), self.vgg(preprocess(img2)))
+
+
+# 替代后的损失函数
+def perceptual_disp_loss(self, ref, tgt, disp):
+    # 将ref通过disp对齐，假设你已经写好了warp()函数
+    ref_warped = self.warp(ref, disp)
+
+    # 用预定义好的VGG感知损失进行特征差评估
+    perceptual_loss = self.perceptual(ref_warped, tgt)
+
+    return perceptual_loss
 
 
 class BiRGenerator(nn.Module):
@@ -337,8 +368,6 @@ class BiRGenerator(nn.Module):
         self.image_fusion = fusion_img
         self.fused_image_RGB = YCbCr2RGB(self.image_fusion, self.image_vi_Cb, self.image_vi_Cr)
 
-
-
     def trainReg(self, image_ir, image_vi, image_ir_warp, image_vi_warp, disp):
         self.image_ir_RGB = image_ir
         self.image_vi_RGB = image_vi
@@ -398,19 +427,35 @@ class BiRGenerator(nn.Module):
         return weights[0] * (l1loss(src, tgt, mask) + l2loss(src, tgt, mask)) + weights[1] * self.gradientloss(src, tgt,
                                                                                                                mask)
 
-    def weightfiledloss(self, ref, tgt, disp, disp_gt):
-        ref = (ref - ref.mean(dim=[-1, -2], keepdim=True)) / (ref.std(dim=[-1, -2], keepdim=True) + 1e-5)
-        tgt = (tgt - tgt.mean(dim=[-1, -2], keepdim=True)) / (tgt.std(dim=[-1, -2], keepdim=True) + 1e-5)
-        g_ref = KF.spatial_gradient(ref, order=2).mean(dim=1).abs().sum(dim=1).detach().unsqueeze(1)
-        g_tgt = KF.spatial_gradient(tgt, order=2).mean(dim=1).abs().sum(dim=1).detach().unsqueeze(1)
-        w = (((g_ref + g_tgt)) * 2 + 1) * self.border_mask
-        return (w * (1000 * (disp - disp_gt).abs().clamp(min=1e-2).pow(2))).mean()
+    def weightfiledloss(self, ref, tgt, disp):
+        vgg_feat = vgg16(pretrained=True).features[:8].eval().to(ref.device)
+        for p in vgg_feat.parameters():
+            p.requires_grad = False
+        B, C, H, W = ref.shape
+        y, x = torch.meshgrid(
+            torch.linspace(-1, 1, H, device=ref.device),
+            torch.linspace(-1, 1, W, device=ref.device),
+            indexing='ij'
+        )
+        base_grid = torch.stack((x, y), dim=-1).unsqueeze(0).expand(B, H, W, 2)  # (B,H,W,2)
+        norm_disp = torch.zeros_like(disp)
+        norm_disp[:, 0, :, :] = disp[:, 0, :, :] / (W / 2)  # x 方向
+        norm_disp[:, 1, :, :] = disp[:, 1, :, :] / (H / 2)  # y 方向
+        norm_disp = norm_disp.permute(0, 2, 3, 1)  # (B,H,W,2)
+        sampling_grid = base_grid + norm_disp  # (B,H,W,2)
+        warped_ref = F.grid_sample(ref, sampling_grid, mode='bilinear', padding_mode='border', align_corners=True)
+
+        def normalize_img(x):
+            return normalize(x, mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
+
+        ref_feat = vgg_feat(normalize_img(warped_ref))
+        tgt_feat = vgg_feat(normalize_img(tgt))
+        loss = F.l1_loss(ref_feat, tgt_feat)
+        return loss
 
     def border_suppression(self, img, mask):
         return (img * (1 - mask)).mean()
-
-
-
 
     def calDecLoss(self, L1, R1, X1, L2, R2, X2, vis, ir):
         R = torch.max(R1, R2)
@@ -457,6 +502,11 @@ class BiRGenerator(nn.Module):
         loss = loss_h.mean() + loss_w.mean()
         return loss
 
+    def bidirectional_consistency_loss(self, disp_ir2vi, disp_vi2ir):
+
+        loss = F.l1_loss(disp_ir2vi, -disp_vi2ir)  # 互为反向时差值应接近0
+        return loss
+
     def backward_RF(self):
         D_fake = self.dual_discrim(self.image_ir_Reg_RGB.detach(), self.image_vi_RGB)
         loss_adv = -torch.mean(D_fake)
@@ -466,9 +516,10 @@ class BiRGenerator(nn.Module):
                        self.imgloss(self.image_vi_warp_RGB, self.image_vi_warp_fake_RGB, self.goodmask) + self.imgloss(
             self.image_vi_Reg_RGB, self.image_vi_RGB, self.goodmask * self.goodmask_inverse)
         loss_reg_field = self.weightfiledloss(self.image_ir_warp_RGB, self.image_vi_warp_fake_RGB,
-                                              self.deformation_1['vis2ir'], self.disp.permute(0, 3, 1, 2)) + \
+                                              self.deformation_1['vis2ir']) + \
                          self.weightfiledloss(self.image_vi_warp_RGB, self.image_ir_warp_fake_RGB,
-                                              self.deformation_2['ir2vis'], self.disp.permute(0, 3, 1, 2))
+                                              self.deformation_2['ir2vis']) + self.bidirectional_consistency_loss(
+            self.deformation_1['vis2ir'], self.deformation_2['ir2vis'])
         loss_smooth = smoothloss(self.deformation_1['vis2ir']) + smoothloss(self.deformation_1['ir2vis']) + \
                       smoothloss(self.deformation_2['vis2ir']) + smoothloss(self.deformation_2['ir2vis'])
 
@@ -493,7 +544,6 @@ class BiRGenerator(nn.Module):
 
         self.loss_total = loss_total
 
-
     def update_lr(self):
         self.DM_sch.step()
 
@@ -502,7 +552,8 @@ class BiRGenerator(nn.Module):
         checkpoint = torch.load(model_dir)
         # weight
         try:
-            self.enCodeDeCode.load_state_dict({k: v for k, v in checkpoint['DM'].items() if k in self.enCodeDeCode.state_dict()})
+            self.enCodeDeCode.load_state_dict(
+                {k: v for k, v in checkpoint['DM'].items() if k in self.enCodeDeCode.state_dict()})
         except:
             pass
         try:
@@ -511,7 +562,6 @@ class BiRGenerator(nn.Module):
             pass
 
         if train:
-
             self.DM_opt.param_groups[0]['initial_lr'] = 0.001
 
         return checkpoint['ep'], checkpoint['total_it']
