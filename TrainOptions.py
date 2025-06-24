@@ -24,7 +24,7 @@ class TrainOptions():
 
         # training related
         self.parser.add_argument('--lr_policy', type=str, default='lambda', help='type of learn rate decay')
-        self.parser.add_argument('--n_ep', type=int, default=1, help='number of epochs')  # 400 * d_iter
+        self.parser.add_argument('--n_ep', type=int, default=1000, help='number of epochs')  # 400 * d_iter
         self.parser.add_argument('--n_ep_decay', type=int, default=1600,
                                  help='epoch start decay learning rate, set -1 if no decay')  # 200 * d_iter
         self.parser.add_argument('--resume', type=str, default='./checkpoint/RegFusion.pth',
